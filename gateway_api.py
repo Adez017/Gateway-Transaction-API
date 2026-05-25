@@ -22,9 +22,7 @@ app = FastAPI(
 # LOAD DATA
 # ====================================================
 
-df = pd.read_csv(
-    r"D:\POC\financial_payloads\gateway_transactions.csv"
-)
+df = pd.read_csv("gateway_transactions.csv")
 
 # ====================================================
 # CLEAN INVALID JSON VALUES
