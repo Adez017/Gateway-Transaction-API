@@ -4,27 +4,27 @@ import numpy as np
 import random
 import uuid
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ============================================================
 # FASTAPI CONFIG
 # ============================================================
 
 app = FastAPI(
-
     title="Enterprise Financial Gateway API",
-
     description="""
-    Hybrid Financial Gateway API
-    supporting both historical and live transactions
-    for reconciliation and auditing platform.
-    """,
+    Gateway Transaction Source API
 
-    version="1.0.0"
+    Supports:
+    - Historical Transaction Load
+    - Live Transaction Feed
+    - Reconciliation Testing
+    """,
+    version="2.0.0"
 )
 
 # ============================================================
-# HISTORICAL FILE
+# SOURCE FILE
 # ============================================================
 
 CSV_FILE = "gateway_transactions.csv"
@@ -41,26 +41,47 @@ historical_df.replace(
     inplace=True
 )
 
-historical_df = historical_df.fillna("")
+historical_df.fillna("", inplace=True)
 
 # ============================================================
 # MASTER DATA
 # ============================================================
 
-payment_statuses = [
+PAYMENT_STATUSES = [
     "SUCCESS",
     "FAILED",
     "PENDING"
 ]
 
-regions = [
+CURRENCIES = [
+    "USD",
+    "EUR",
+    "INR",
+    "GBP"
+]
+
+GATEWAYS = [
+    "Stripe",
+    "PayPal",
+    "Razorpay"
+]
+
+PAYMENT_METHODS = [
+    "UPI",
+    "NETBANKING",
+    "CARD",
+    "WALLET"
+]
+
+REGIONS = [
     "US",
     "EU",
+    "IN",
     "APAC"
 ]
 
 # ============================================================
-# ROOT ENDPOINT
+# ROOT
 # ============================================================
 
 @app.get("/")
@@ -75,7 +96,6 @@ def home():
 
             "/transactions",
             "/live-transactions",
-            "/failed-transactions",
             "/stats",
             "/health"
         ]
@@ -86,20 +106,25 @@ def home():
 # ============================================================
 
 @app.get("/transactions")
-def get_transactions(limit: int = 100):
+def get_transactions(limit: int = 10000):
 
-    latest = historical_df.tail(limit)
+    data = historical_df.tail(limit)
 
     return {
 
         "source_type":
-            "historical_batch_data",
+            "historical_gateway_batch",
+
+        "extracted_at":
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
 
         "count":
-            len(latest),
+            len(data),
 
         "transactions":
-            latest.to_dict(
+            data.to_dict(
                 orient="records"
             )
     }
@@ -108,106 +133,188 @@ def get_transactions(limit: int = 100):
 # LIVE TRANSACTION GENERATOR
 # ============================================================
 
-def generate_live_transactions(num_records=50):
+def generate_live_transactions(
+    num_records=100
+):
 
     transactions = []
 
     for _ in range(num_records):
 
         amount = round(
-            random.uniform(100, 100000),
+            random.uniform(
+                100,
+                100000
+            ),
             2
         )
 
-        # Outlier Transactions
+        # High-value transaction anomaly
 
         if random.random() < 0.01:
 
             amount = round(
-                random.uniform(1000000, 5000000),
+                random.uniform(
+                    1000000,
+                    5000000
+                ),
                 2
             )
-
-        # Refund / Negative Transactions
-
-        if random.random() < 0.02:
-
-            amount = -amount
 
         transaction = {
 
             "gateway_transaction_id":
-                f"GTX-{random.randint(1000000,9999999)}",
+                f"GTW-{random.randint(100000,999999)}",
 
             "transaction_ref":
                 str(uuid.uuid4())[:12],
 
             "customer_id":
-                f"CUST-{random.randint(10000,99999)}",
+                f"CUST-{random.randint(1000,9999)}",
 
-            "txn_amount":
+            "amount":
                 amount,
 
-            "gateway_fee":
-                round(
-                    abs(amount) * random.uniform(0.01, 0.03),
-                    2
+            "currency":
+                random.choice(
+                    CURRENCIES
+                ),
+
+            "gateway_name":
+                random.choice(
+                    GATEWAYS
+                ),
+
+            "payment_method":
+                random.choice(
+                    PAYMENT_METHODS
                 ),
 
             "payment_state":
-                random.choice(payment_statuses),
+                random.choice(
+                    PAYMENT_STATUSES
+                ),
 
             "gateway_timestamp":
                 datetime.now().strftime(
-                    "%Y-%m-%d %H:%M:%S"
+                    "%d-%m-%Y %H:%M"
                 ),
 
-            "settlement_batch":
-                f"BATCH-{random.randint(1000,9999)}",
+            "region":
+                random.choice(
+                    REGIONS
+                ),
 
-            "processing_region":
-                random.choice(regions)
+            "gateway_fee":
+                round(
+                    amount *
+                    random.uniform(
+                        0.01,
+                        0.03
+                    ),
+                    2
+                )
         }
 
         # ====================================================
-        # INJECT OPERATIONAL ANOMALIES
+        # RECONCILIATION TEST SCENARIOS
         # ====================================================
 
         # Missing transaction reference
 
         if random.random() < 0.01:
 
-            transaction["transaction_ref"] = None
+            transaction[
+                "transaction_ref"
+            ] = None
 
-        # Invalid region
+        # Missing customer
 
-        if random.random() < 0.01:
+        if random.random() < 0.005:
 
-            transaction["processing_region"] = "UNKNOWN"
+            transaction[
+                "customer_id"
+            ] = None
 
-        # Delayed settlement simulation
+        # Refund
 
-        if random.random() < 0.03:
+        if random.random() < 0.02:
 
-            transaction["payment_state"] = "PENDING"
+            transaction[
+                "amount"
+            ] = -amount
 
-        transactions.append(transaction)
+        # Invalid currency
+
+        if random.random() < 0.005:
+
+            transaction[
+                "currency"
+            ] = "XXX"
+
+        # Unknown region
+
+        if random.random() < 0.005:
+
+            transaction[
+                "region"
+            ] = "UNKNOWN"
+
+        # Excessive fee anomaly
+
+        if random.random() < 0.005:
+
+            transaction[
+                "gateway_fee"
+            ] = round(
+                amount * 0.25,
+                2
+            )
+
+        # Future timestamp anomaly
+
+        if random.random() < 0.005:
+
+            transaction[
+                "gateway_timestamp"
+            ] = (
+                datetime.now()
+                + timedelta(days=2)
+            ).strftime(
+                "%d-%m-%Y %H:%M"
+            )
+
+        # Duplicate reference anomaly
+
+        if random.random() < 0.005:
+
+            transaction[
+                "transaction_ref"
+            ] = "DUPLICATE_REF"
+
+        transactions.append(
+            transaction
+        )
 
     return transactions
 
 # ============================================================
-# LIVE TRANSACTIONS ENDPOINT
+# LIVE TRANSACTIONS
 # ============================================================
 
 @app.get("/live-transactions")
-def live_transactions(limit: int = 50):
+def live_transactions(
+    limit: int = 50
+):
 
-    transactions = generate_live_transactions(limit)
+    transactions = generate_live_transactions(
+        limit
+    )
 
     return {
 
         "source_type":
-            "live_operational_stream",
+            "live_gateway_stream",
 
         "generated_at":
             datetime.now().strftime(
@@ -222,31 +329,7 @@ def live_transactions(limit: int = 50):
     }
 
 # ============================================================
-# FAILED TRANSACTIONS
-# ============================================================
-
-@app.get("/failed-transactions")
-def failed_transactions(limit: int = 100):
-
-    failed = historical_df[
-        historical_df["payment_state"] == "FAILED"
-    ]
-
-    failed = failed.tail(limit)
-
-    return {
-
-        "count":
-            len(failed),
-
-        "transactions":
-            failed.to_dict(
-                orient="records"
-            )
-    }
-
-# ============================================================
-# API HEALTH
+# HEALTH CHECK
 # ============================================================
 
 @app.get("/health")
@@ -256,6 +339,12 @@ def health():
 
         "status":
             "RUNNING",
+
+        "source":
+            "Gateway API",
+
+        "historical_records":
+            len(historical_df),
 
         "timestamp":
             datetime.now().strftime(
@@ -276,26 +365,51 @@ def stats():
             len(historical_df),
 
         "successful_transactions":
-            len(
-                historical_df[
-                    historical_df["payment_state"]
-                    == "SUCCESS"
-                ]
+            int(
+                (
+                    historical_df[
+                        "payment_state"
+                    ] == "SUCCESS"
+                ).sum()
             ),
 
         "failed_transactions":
-            len(
-                historical_df[
-                    historical_df["payment_state"]
-                    == "FAILED"
-                ]
+            int(
+                (
+                    historical_df[
+                        "payment_state"
+                    ] == "FAILED"
+                ).sum()
             ),
 
         "pending_transactions":
-            len(
+            int(
+                (
+                    historical_df[
+                        "payment_state"
+                    ] == "PENDING"
+                ).sum()
+            ),
+
+        "total_amount":
+            round(
                 historical_df[
-                    historical_df["payment_state"]
-                    == "PENDING"
-                ]
+                    "amount"
+                ].sum(),
+                2
+            ),
+
+        "average_gateway_fee":
+            round(
+                historical_df[
+                    "gateway_fee"
+                ].mean(),
+                2
             )
     }
+
+# ============================================================
+# RUN
+# ============================================================
+
+# uvicorn gateway_api:app --reload
