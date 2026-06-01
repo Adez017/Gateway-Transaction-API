@@ -106,7 +106,7 @@ def home():
 # ============================================================
 
 @app.get("/transactions")
-def get_transactions(limit: int = 10000):
+def get_transactions(limit: int = 1000):
 
     data = historical_df.tail(limit)
 
